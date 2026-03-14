@@ -189,6 +189,12 @@ body {
   z-index: 0;
 }
 
+.ar-hint,
+.ar-buttons {
+  position: relative;
+  z-index: 1;
+}
+
 .ar-buttons {
   display: flex;
   gap: 10px;
