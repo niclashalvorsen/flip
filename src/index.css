@@ -181,6 +181,36 @@ body {
   cursor: pointer;
 }
 
+.ar-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ar-btn {
+  background: #fff;
+  color: #111;
+  border: none;
+  border-radius: 30px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ar-btn--ghost {
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: 1px solid #555;
+}
+
+.ar-btn--danger {
+  background: #ff3b30;
+  color: #fff;
+}
+
 .ar-hint {
   background: rgba(0,0,0,0.5);
   color: #fff;
