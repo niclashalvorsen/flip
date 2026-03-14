@@ -75,6 +75,24 @@ export default function ARScene({ glbUrl, onExit }) {
 
     const raycaster = new THREE.Raycaster()
 
+    // Pinch-to-zoom — scales the scene (visually identical to camera zoom)
+    let lastPinchDist = null
+    canvas.addEventListener('touchmove', e => {
+      if (e.touches.length !== 2) return
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (lastPinchDist !== null) {
+        const factor = dist / lastPinchDist
+        const next = THREE.MathUtils.clamp(scene.scale.x * factor, 0.25, 4)
+        scene.scale.setScalar(next)
+      }
+      lastPinchDist = dist
+    }, { passive: true })
+    canvas.addEventListener('touchend', e => {
+      if (e.touches.length < 2) lastPinchDist = null
+    }, { passive: true })
+
     session.addEventListener('select', () => {
       // Raycast from camera centre to check if an existing object was tapped
       const xrCamera = renderer.xr.getCamera()
