@@ -3,11 +3,11 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 /*
-  Interaction model:
-  - Tap floor (reticle visible, nothing selected) → place new object
-  - Tap existing object → select it (highlighted), it follows the reticle
-  - Tap floor while object selected → drop it there
-  - Tap same object again → deselect
+  Gestures:
+  - Single tap floor  → place new object (or drop selected object)
+  - Single tap object → select it (follows reticle) / tap again to deselect
+  - Two-finger pinch  → camera zoom (projection matrix, objects stay real-world scale)
+  - Two-finger twist  → rotate selected object around Y axis
 */
 
 export default function ARScene({ glbUrl, onExit }) {
@@ -16,6 +16,7 @@ export default function ARScene({ glbUrl, onExit }) {
   const [placedCount, setPlacedCount] = useState(0)
   const [hasSelected, setHasSelected] = useState(false)
   const sessionRef = useRef(null)
+  const zoomRef = useRef(1) // camera zoom factor, separate from scene scale
 
   useEffect(() => {
     return () => { sessionRef.current?.end().catch(() => {}) }
@@ -41,7 +42,7 @@ export default function ARScene({ glbUrl, onExit }) {
     dir.position.set(1, 2, 1)
     scene.add(dir)
 
-    // Reticle ring on floor
+    // Reticle
     const reticle = new THREE.Mesh(
       new THREE.RingGeometry(0.08, 0.10, 32).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xffffff })
@@ -50,11 +51,30 @@ export default function ARScene({ glbUrl, onExit }) {
     reticle.visible = false
     scene.add(reticle)
 
-    // Load GLB template
+    /*
+      Zoom proxy — rendered first (renderOrder -1000), modifies the XR camera's
+      projection matrix AFTER Three.js updates it from the XR frame, but BEFORE
+      any scene objects are drawn. This zooms the view without scaling objects.
+      The XR system resets the matrix each frame so there's no accumulation.
+    */
+    const zoomProxy = new THREE.Mesh(new THREE.BufferGeometry())
+    zoomProxy.frustumCulled = false
+    zoomProxy.renderOrder = -1000
+    zoomProxy.onBeforeRender = (_, __, cam) => {
+      if (!cam.isArrayCamera) return
+      const z = zoomRef.current
+      cam.cameras.forEach(c => {
+        c.projectionMatrix.elements[0] *= z
+        c.projectionMatrix.elements[5] *= z
+        c.projectionMatrixInverse.copy(c.projectionMatrix).invert()
+      })
+    }
+    scene.add(zoomProxy)
+
+    // Load GLB
     let modelTemplate = null
     new GLTFLoader().load(glbUrl, gltf => { modelTemplate = gltf.scene })
 
-    // Mutable state (kept outside React to avoid stale closure issues)
     const placedObjects = []
     let selected = null
 
@@ -72,39 +92,50 @@ export default function ARScene({ glbUrl, onExit }) {
     const refSpace = await session.requestReferenceSpace('local')
     const viewerSpace = await session.requestReferenceSpace('viewer')
     const hitTestSource = await session.requestHitTestSource({ space: viewerSpace })
-
     const raycaster = new THREE.Raycaster()
 
-    // Pinch-to-zoom — scales the scene (visually identical to camera zoom)
+    // Two-finger gesture tracking
     let lastPinchDist = null
+    let lastPinchAngle = null
+
+    function readTwoFingers(e) {
+      if (e.touches.length < 2) return null
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      return { dist: Math.sqrt(dx * dx + dy * dy), angle: Math.atan2(dy, dx) }
+    }
+
     canvas.addEventListener('touchmove', e => {
-      if (e.touches.length !== 2) return
-      const dx = e.touches[0].clientX - e.touches[1].clientX
-      const dy = e.touches[0].clientY - e.touches[1].clientY
-      const dist = Math.sqrt(dx * dx + dy * dy)
+      const pair = readTwoFingers(e)
+      if (!pair) return
       if (lastPinchDist !== null) {
-        const factor = dist / lastPinchDist
-        const next = THREE.MathUtils.clamp(scene.scale.x * factor, 0.25, 4)
-        scene.scale.setScalar(next)
+        // Pinch → zoom camera (projection matrix)
+        zoomRef.current = THREE.MathUtils.clamp(
+          zoomRef.current * (pair.dist / lastPinchDist), 0.5, 3
+        )
+        // Twist → rotate selected object around Y axis
+        if (selected && lastPinchAngle !== null) {
+          selected.rotation.y += pair.angle - lastPinchAngle
+        }
       }
-      lastPinchDist = dist
-    }, { passive: true })
-    canvas.addEventListener('touchend', e => {
-      if (e.touches.length < 2) lastPinchDist = null
+      lastPinchDist = pair.dist
+      lastPinchAngle = pair.angle
     }, { passive: true })
 
+    canvas.addEventListener('touchend', e => {
+      if (e.touches.length < 2) { lastPinchDist = null; lastPinchAngle = null }
+    }, { passive: true })
+
+    // Tap: select existing object, drop selected, or place new
     session.addEventListener('select', () => {
-      // Raycast from camera centre to check if an existing object was tapped
       const xrCamera = renderer.xr.getCamera()
       raycaster.setFromCamera(new THREE.Vector2(0, 0), xrCamera)
       const hits = raycaster.intersectObjects(placedObjects, true)
 
       if (hits.length > 0) {
-        // Find root placed object for this hit
         const root = findRoot(hits[0].object, placedObjects)
         if (root) {
           if (selected === root) {
-            // Tap same object → deselect
             setHighlight(root, false)
             selected = null
             setHasSelected(false)
@@ -118,20 +149,18 @@ export default function ARScene({ glbUrl, onExit }) {
         }
       }
 
-      // Tapped floor / empty space
       if (!reticle.visible) return
 
       if (selected) {
-        // Drop selected object at current reticle position
-        applyReticleTransform(selected, reticle)
+        // Drop at current reticle position, keep Y rotation
+        snapToFloor(selected, reticle, true)
         setHighlight(selected, false)
         selected = null
         setHasSelected(false)
       } else {
-        // Place a new object
         if (!modelTemplate) return
         const model = modelTemplate.clone()
-        applyReticleTransform(model, reticle)
+        snapToFloor(model, reticle, false)
         scene.add(model)
         placedObjects.push(model)
         setPlacedCount(c => c + 1)
@@ -152,8 +181,7 @@ export default function ARScene({ glbUrl, onExit }) {
         const pose = hitResults[0].getPose(refSpace)
         reticle.visible = true
         reticle.matrix.fromArray(pose.transform.matrix)
-        // Selected object follows the reticle smoothly
-        if (selected) applyReticleTransform(selected, reticle)
+        if (selected) snapToFloor(selected, reticle, true)
       } else {
         reticle.visible = false
       }
@@ -170,10 +198,10 @@ export default function ARScene({ glbUrl, onExit }) {
   }
 
   const hint = hasSelected
-    ? 'Pek mot gulvet for å flytte — trykk for å slippe'
+    ? 'Trykk gulv for å flytte · To fingre for å rotere/zoome'
     : placedCount === 0
       ? 'Pek mot gulvet og trykk for å plassere'
-      : 'Trykk på objekt for å flytte, eller gulvet for nytt'
+      : 'Trykk objekt for å velge · To fingre for å zoome'
 
   return (
     <div className="ar-scene">
@@ -207,9 +235,14 @@ export default function ARScene({ glbUrl, onExit }) {
   )
 }
 
-function applyReticleTransform(object, reticle) {
+// Position object on floor from reticle matrix.
+// preserveY: keep any manual Y rotation the user has applied.
+function snapToFloor(object, reticle, preserveY) {
+  const savedY = preserveY ? object.rotation.y : 0
+  const rotMatrix = new THREE.Matrix4().extractRotation(reticle.matrix)
   object.position.setFromMatrixPosition(reticle.matrix)
-  object.quaternion.setFromRotationMatrix(reticle.matrix)
+  object.rotation.setFromRotationMatrix(rotMatrix)
+  object.rotation.y = savedY
 }
 
 function findRoot(mesh, placedObjects) {
