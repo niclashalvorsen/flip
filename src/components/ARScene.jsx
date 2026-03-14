@@ -21,7 +21,7 @@ export default function ARScene({ glbUrl, onExit }) {
   const [hasSelected, setHasSelected] = useState(false)
 
   const sessionRef = useRef(null)
-  const zoomRef = useRef(1)
+  const sceneRef = useRef(null)
   const selectedRef = useRef(null)
   const addFnRef = useRef(null)
   const removeFnRef = useRef(null)
@@ -45,14 +45,14 @@ export default function ARScene({ glbUrl, onExit }) {
 
       if (lastDist !== null) {
         if (selectedRef.current) {
-          // Selection mode → rotate around Y
+          // Selection mode → rotate around Y (3x sensitivity)
           if (lastAngle !== null) {
-            selectedRef.current.rotation.y += angle - lastAngle
+            selectedRef.current.rotation.y += (angle - lastAngle) * 3
           }
         } else {
-          // Free mode → zoom camera
-          zoomRef.current = THREE.MathUtils.clamp(
-            zoomRef.current * (dist / lastDist), 0.5, 3
+          // Free mode → zoom via scene scale (reliable across all devices)
+          sceneRef.current.scale.setScalar(
+            THREE.MathUtils.clamp(sceneRef.current.scale.x * (dist / lastDist), 0.25, 4)
           )
         }
       }
@@ -89,6 +89,7 @@ export default function ARScene({ glbUrl, onExit }) {
     renderer.xr.enabled = true
 
     const scene = new THREE.Scene()
+    sceneRef.current = scene
     const camera = new THREE.PerspectiveCamera()
 
     scene.add(new THREE.AmbientLight(0xffffff, 1.2))
@@ -105,21 +106,6 @@ export default function ARScene({ glbUrl, onExit }) {
     reticle.visible = false
     scene.add(reticle)
 
-    // Zoom proxy — modifies XR projection matrix after Three.js updates it,
-    // before any scene objects are drawn. Objects stay real-world scale.
-    const zoomProxy = new THREE.Mesh(new THREE.BufferGeometry())
-    zoomProxy.frustumCulled = false
-    zoomProxy.renderOrder = -1000
-    zoomProxy.onBeforeRender = (_, __, cam) => {
-      if (!cam.isArrayCamera) return
-      const z = zoomRef.current
-      cam.cameras.forEach(c => {
-        c.projectionMatrix.elements[0] *= z
-        c.projectionMatrix.elements[5] *= z
-        c.projectionMatrixInverse.copy(c.projectionMatrix).invert()
-      })
-    }
-    scene.add(zoomProxy)
 
     let modelTemplate = null
     new GLTFLoader().load(glbUrl, gltf => { modelTemplate = gltf.scene })
