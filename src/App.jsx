@@ -1,54 +1,50 @@
 import { useState } from 'react'
-import CategoryBrowse from './components/CategoryBrowse'
-import ProductList from './components/ProductList'
-import ProductDetail from './components/ProductDetail'
-import { categories, products } from './data/mockProducts'
+import ARViewer from './components/ARViewer'
+import LeggTil from './components/LeggTil'
+import Katalog from './components/Katalog'
+import { products } from './data/mockProducts'
+
+const DEFAULT_PRODUCT = products[0]
 
 export default function App() {
-  const [view, setView] = useState('home')
-  const [selectedCategory, setSelectedCategory] = useState(null)
-  const [selectedProduct, setSelectedProduct] = useState(null)
-
-  function selectCategory(category) {
-    setSelectedCategory(category)
-    setView('list')
-  }
+  const [currentProduct, setCurrentProduct] = useState(DEFAULT_PRODUCT)
+  const [sheet, setSheet] = useState(null) // 'legg-til' | 'katalog' | null
 
   function selectProduct(product) {
-    setSelectedProduct(product)
-    setView('detail')
-  }
-
-  function goBack() {
-    if (view === 'detail') setView('list')
-    else { setView('home'); setSelectedCategory(null) }
+    if (product) setCurrentProduct(product)
+    setSheet(null)
   }
 
   return (
     <div className="app">
       <header className="header">
-        <button className="logo" onClick={() => { setView('home'); setSelectedCategory(null); setSelectedProduct(null) }}>
-          ARrom
-        </button>
-        {view !== 'home' && (
-          <button className="back-btn" onClick={goBack}>← Tilbake</button>
-        )}
+        <span className="logo">ARrom</span>
       </header>
-      <main className="main">
-        {view === 'home' && (
-          <CategoryBrowse categories={categories} onSelect={selectCategory} />
-        )}
-        {view === 'list' && (
-          <ProductList
-            category={selectedCategory}
-            products={products.filter(p => p.category === selectedCategory.id)}
-            onSelect={selectProduct}
-          />
-        )}
-        {view === 'detail' && (
-          <ProductDetail product={selectedProduct} />
-        )}
-      </main>
+
+      <div className="viewer-wrap">
+        <ARViewer
+          glbUrl={currentProduct?.glb_url}
+          usdzUrl={currentProduct?.usdz_url}
+          alt={currentProduct?.name}
+          fullscreen
+        />
+      </div>
+
+      <div className="bottom-bar">
+        <button className="bottom-btn" onClick={() => setSheet('legg-til')}>
+          + Legg til
+        </button>
+        <button className="bottom-btn bottom-btn--secondary" onClick={() => setSheet('katalog')}>
+          Katalog
+        </button>
+      </div>
+
+      {sheet === 'legg-til' && (
+        <LeggTil onClose={() => setSheet(null)} onModelReady={selectProduct} />
+      )}
+      {sheet === 'katalog' && (
+        <Katalog onClose={() => setSheet(null)} onSelect={selectProduct} />
+      )}
     </div>
   )
 }

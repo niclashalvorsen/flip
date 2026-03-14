@@ -1,6 +1,6 @@
-export default function ARViewer({ glbUrl, usdzUrl, alt }) {
+export default function ARViewer({ glbUrl, usdzUrl, alt, fullscreen }) {
   return (
-    <div className="ar-viewer">
+    <div className={fullscreen ? 'ar-viewer ar-viewer--fullscreen' : 'ar-viewer'}>
       <model-viewer
         src={glbUrl}
         ios-src={usdzUrl ?? undefined}
@@ -12,7 +12,6 @@ export default function ARViewer({ glbUrl, usdzUrl, alt }) {
         auto-rotate=""
         shadow-intensity="1"
         environment-image="neutral"
-        style={{ width: '100%', height: '360px', background: '#1a1a1a', borderRadius: '12px' }}
       >
         <button slot="ar-button" className="ar-button">
           📱 Plasser i rommet
