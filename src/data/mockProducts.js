@@ -12,7 +12,7 @@ export const products = [
     retailer: 'Demo',
     category: 'furniture',
     price_nok: 2990,
-    glb_url: '/noni_spisestol.glb',
+    glb_url: `${import.meta.env.BASE_URL}noni_spisestol.glb`,
     usdz_url: null,
     height_cm: 82,
     width_cm: 47,
