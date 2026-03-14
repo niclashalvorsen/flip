@@ -181,6 +181,14 @@ body {
   cursor: pointer;
 }
 
+/* Full-screen transparent layer that captures touch events reliably in WebXR */
+.ar-touch-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  z-index: 0;
+}
+
 .ar-buttons {
   display: flex;
   gap: 10px;

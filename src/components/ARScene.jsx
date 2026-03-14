@@ -3,83 +3,78 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 /*
-  Interaction model:
-  - Tap object       → select / deselect (XR select event)
-  - "Legg til" btn   → place new object at reticle
-  - "Fjern" btn      → remove selected object
-  - Two-finger pinch → zoom (projection matrix, objects stay real-world scale)
-  - Two-finger twist → rotate selected object around Y axis
+  Gestures (via touch-capture layer — reliable in WebXR):
+  - No object selected  → two-finger pinch = camera zoom
+  - Object selected     → two-finger twist  = rotate object around Y axis
 
-  Touch events for gestures are captured on a DOM overlay layer,
-  which works reliably in WebXR unlike listening on the canvas.
+  Buttons:
+  - "Legg til her" → place at reticle
+  - "Fjern"        → remove selected object  (shown when selected)
+  - "Ferdig"       → exit AR
 */
 
 export default function ARScene({ glbUrl, onExit }) {
   const canvasRef = useRef(null)
+  const touchLayerRef = useRef(null)
   const [status, setStatus] = useState('idle')
   const [placedCount, setPlacedCount] = useState(0)
   const [hasSelected, setHasSelected] = useState(false)
 
-  // Shared refs — let React UI call into the live AR loop
   const sessionRef = useRef(null)
   const zoomRef = useRef(1)
-  const selectedRef = useRef(null)       // currently selected Three.js object
-  const reticleRef = useRef(null)        // Three.js reticle mesh
-  const placedRef = useRef([])           // placed objects array
-  const sceneRef = useRef(null)
-  const modelTemplateRef = useRef(null)
-  const addFnRef = useRef(null)          // callable from button
+  const selectedRef = useRef(null)
+  const addFnRef = useRef(null)
   const removeFnRef = useRef(null)
 
-  // Two-finger gesture state (refs so no stale closures in touch handlers)
-  const pinchDistRef = useRef(null)
-  const pinchAngleRef = useRef(null)
-
+  // Attach native touch listeners to the touch-capture layer.
+  // Native listeners on a real DOM node work reliably in WebXR.
+  // Uses refs so no stale closures — selectedRef.current is always current.
   useEffect(() => {
-    return () => { sessionRef.current?.end().catch(() => {}) }
-  }, [])
+    const el = touchLayerRef.current
+    if (!el) return
 
-  // ── Button handlers (called from React UI, delegate into AR loop via refs) ──
+    let lastDist = null
+    let lastAngle = null
 
-  function handleAdd() {
-    addFnRef.current?.()
-  }
+    function onTouchMove(e) {
+      if (e.touches.length < 2) return
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const angle = Math.atan2(dy, dx)
 
-  function handleRemove() {
-    removeFnRef.current?.()
-  }
-
-  // ── Two-finger touch handlers (attached to DOM overlay, not canvas) ──
-
-  function onTouchMove(e) {
-    if (e.touches.length < 2) return
-    const dx = e.touches[1].clientX - e.touches[0].clientX
-    const dy = e.touches[1].clientY - e.touches[0].clientY
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    const angle = Math.atan2(dy, dx)
-
-    if (pinchDistRef.current !== null) {
-      // Pinch → camera zoom via projection matrix
-      zoomRef.current = THREE.MathUtils.clamp(
-        zoomRef.current * (dist / pinchDistRef.current), 0.5, 3
-      )
-      // Twist → rotate selected object around Y
-      if (selectedRef.current && pinchAngleRef.current !== null) {
-        selectedRef.current.rotation.y += angle - pinchAngleRef.current
+      if (lastDist !== null) {
+        if (selectedRef.current) {
+          // Selection mode → rotate around Y
+          if (lastAngle !== null) {
+            selectedRef.current.rotation.y += angle - lastAngle
+          }
+        } else {
+          // Free mode → zoom camera
+          zoomRef.current = THREE.MathUtils.clamp(
+            zoomRef.current * (dist / lastDist), 0.5, 3
+          )
+        }
       }
-    }
-    pinchDistRef.current = dist
-    pinchAngleRef.current = angle
-  }
 
-  function onTouchEnd(e) {
-    if (e.touches.length < 2) {
-      pinchDistRef.current = null
-      pinchAngleRef.current = null
+      lastDist = dist
+      lastAngle = angle
     }
-  }
 
-  // ── Start WebXR session ──
+    function onTouchEnd(e) {
+      if (e.touches.length < 2) { lastDist = null; lastAngle = null }
+    }
+
+    el.addEventListener('touchmove', onTouchMove, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, []) // zoomRef / selectedRef are stable refs — safe with empty deps
+
+  function handleAdd() { addFnRef.current?.() }
+  function handleRemove() { removeFnRef.current?.() }
 
   async function startAR() {
     if (!navigator.xr) { setStatus('unsupported'); return }
@@ -94,7 +89,6 @@ export default function ARScene({ glbUrl, onExit }) {
     renderer.xr.enabled = true
 
     const scene = new THREE.Scene()
-    sceneRef.current = scene
     const camera = new THREE.PerspectiveCamera()
 
     scene.add(new THREE.AmbientLight(0xffffff, 1.2))
@@ -110,9 +104,9 @@ export default function ARScene({ glbUrl, onExit }) {
     reticle.matrixAutoUpdate = false
     reticle.visible = false
     scene.add(reticle)
-    reticleRef.current = reticle
 
-    // Zoom proxy — fires onBeforeRender after XR updates matrices, before draw
+    // Zoom proxy — modifies XR projection matrix after Three.js updates it,
+    // before any scene objects are drawn. Objects stay real-world scale.
     const zoomProxy = new THREE.Mesh(new THREE.BufferGeometry())
     zoomProxy.frustumCulled = false
     zoomProxy.renderOrder = -1000
@@ -127,17 +121,15 @@ export default function ARScene({ glbUrl, onExit }) {
     }
     scene.add(zoomProxy)
 
-    // Load GLB
-    new GLTFLoader().load(glbUrl, gltf => { modelTemplateRef.current = gltf.scene })
+    let modelTemplate = null
+    new GLTFLoader().load(glbUrl, gltf => { modelTemplate = gltf.scene })
 
     const placedObjects = []
-    placedRef.current = placedObjects
     let selected = null
 
-    // Wire up button callbacks
     addFnRef.current = () => {
-      if (!reticle.visible || !modelTemplateRef.current) return
-      const model = modelTemplateRef.current.clone()
+      if (!reticle.visible || !modelTemplate) return
+      const model = modelTemplate.clone()
       snapToFloor(model, reticle, false)
       scene.add(model)
       placedObjects.push(model)
@@ -147,8 +139,7 @@ export default function ARScene({ glbUrl, onExit }) {
     removeFnRef.current = () => {
       if (!selected) return
       scene.remove(selected)
-      const idx = placedObjects.indexOf(selected)
-      if (idx !== -1) placedObjects.splice(idx, 1)
+      placedObjects.splice(placedObjects.indexOf(selected), 1)
       setHighlight(selected, false)
       selected = null
       selectedRef.current = null
@@ -156,7 +147,6 @@ export default function ARScene({ glbUrl, onExit }) {
       setPlacedCount(c => c - 1)
     }
 
-    // XR session
     const session = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['hit-test'],
       optionalFeatures: ['anchors', 'dom-overlay'],
@@ -172,12 +162,11 @@ export default function ARScene({ glbUrl, onExit }) {
     const hitTestSource = await session.requestHitTestSource({ space: viewerSpace })
     const raycaster = new THREE.Raycaster()
 
-    // XR select = tap → select / deselect object only
+    // Tap → select / deselect only (no tap-to-place)
     session.addEventListener('select', () => {
       const xrCamera = renderer.xr.getCamera()
       raycaster.setFromCamera(new THREE.Vector2(0, 0), xrCamera)
       const hits = raycaster.intersectObjects(placedObjects, true)
-
       if (hits.length > 0) {
         const root = findRoot(hits[0].object, placedObjects)
         if (root) {
@@ -229,21 +218,20 @@ export default function ARScene({ glbUrl, onExit }) {
   }
 
   const hint = hasSelected
-    ? 'To fingre: klyp for zoom · vri for rotasjon'
+    ? 'To fingre: vri for å rotere'
     : placedCount === 0
-      ? 'Pek mot gulvet, trykk "Legg til" for å plassere'
-      : 'Trykk på objekt for å velge'
+      ? 'Pek mot gulvet og trykk "Legg til her"'
+      : 'Trykk objekt for å velge · To fingre for zoom'
 
   return (
     <div className="ar-scene">
       <canvas ref={canvasRef} className="ar-canvas" />
+      <div id="ar-overlay" className="ar-overlay">
 
-      <div
-        id="ar-overlay"
-        className="ar-overlay"
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
+        {/* Full-screen touch capture — pointer-events: auto so native
+            listeners fire reliably inside the WebXR session */}
+        <div ref={touchLayerRef} className="ar-touch-layer" />
+
         {status === 'idle' && (
           <div className="ar-start">
             <button className="ar-start-btn" onClick={startAR}>📷 Start AR</button>
@@ -266,16 +254,10 @@ export default function ARScene({ glbUrl, onExit }) {
             <p className="ar-hint">{hint}</p>
             <div className="ar-buttons">
               {hasSelected && (
-                <button className="ar-btn ar-btn--danger" onClick={handleRemove}>
-                  🗑 Fjern
-                </button>
+                <button className="ar-btn ar-btn--danger" onClick={handleRemove}>🗑 Fjern</button>
               )}
-              <button className="ar-btn" onClick={handleAdd}>
-                + Legg til her
-              </button>
-              <button className="ar-btn ar-btn--ghost" onClick={exitAR}>
-                Ferdig
-              </button>
+              <button className="ar-btn" onClick={handleAdd}>+ Legg til her</button>
+              <button className="ar-btn ar-btn--ghost" onClick={exitAR}>Ferdig</button>
             </div>
           </>
         )}
