@@ -1,0 +1,10 @@
+{
+  "name": "ARrom",
+  "short_name": "ARrom",
+  "description": "Visualiser produkter i rommet ditt med AR",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#111111",
+  "background_color": "#111111",
+  "icons": []
+}

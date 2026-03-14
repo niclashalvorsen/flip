@@ -1,40 +1,15 @@
 <!DOCTYPE html>
 <html lang="no">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR Test</title>
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
-  <style>
-    body { margin: 0; background: #111; }
-    model-viewer { width: 100vw; height: 100vh; }
-    #ar-button {
-      position: absolute;
-      bottom: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #fff;
-      border: none;
-      padding: 16px 32px;
-      font-size: 18px;
-      border-radius: 30px;
-      cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <model-viewer
-    src="noni_spisestol.glb"
-    alt="Produkt"
-    ar
-    ar-modes="webxr scene-viewer quick-look"
-    ar-scale="fixed"
-    camera-controls
-    auto-rotate
-    shadow-intensity="1"
-    environment-image="neutral"
-  >
-    <button slot="ar-button" id="ar-button">📱 Plasser i rommet</button>
-  </model-viewer>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARrom</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#111111" />
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
