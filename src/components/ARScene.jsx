@@ -26,10 +26,10 @@ export default function ARScene({ glbUrl, onExit }) {
   const addFnRef = useRef(null)
   const removeFnRef = useRef(null)
 
-  // Attach native touch listeners to the touch-capture layer.
-  // Native listeners on a real DOM node work reliably in WebXR.
-  // Uses refs so no stale closures — selectedRef.current is always current.
+  // Attach native touch listeners once the touch layer is mounted (status=active).
+  // Conditional rendering ensures it never covers the Start AR button.
   useEffect(() => {
+    if (status !== 'active') return
     const el = touchLayerRef.current
     if (!el) return
 
@@ -71,7 +71,7 @@ export default function ARScene({ glbUrl, onExit }) {
       el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('touchend', onTouchEnd)
     }
-  }, []) // zoomRef / selectedRef are stable refs — safe with empty deps
+  }, [status])
 
   function handleAdd() { addFnRef.current?.() }
   function handleRemove() { removeFnRef.current?.() }
@@ -228,9 +228,8 @@ export default function ARScene({ glbUrl, onExit }) {
       <canvas ref={canvasRef} className="ar-canvas" />
       <div id="ar-overlay" className="ar-overlay">
 
-        {/* Full-screen touch capture — pointer-events: auto so native
-            listeners fire reliably inside the WebXR session */}
-        <div ref={touchLayerRef} className="ar-touch-layer" />
+        {/* Only mounted when AR is active — prevents covering the Start button */}
+        {status === 'active' && <div ref={touchLayerRef} className="ar-touch-layer" />}
 
         {status === 'idle' && (
           <div className="ar-start">
