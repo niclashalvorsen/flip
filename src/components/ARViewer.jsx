@@ -1,14 +1,11 @@
 import { useRef, useEffect } from 'react'
 
-export default function ARViewer({ glbUrl, usdzUrl, alt, fullscreen }) {
+export default function ARViewer({ glbUrl, usdzUrl, alt, fullscreen, onStartAR }) {
   const ref = useRef(null)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    el.setAttribute('ar', '')
-    el.setAttribute('ar-modes', 'webxr scene-viewer quick-look')
-    el.setAttribute('ar-scale', 'fixed')
     el.setAttribute('camera-controls', '')
     el.setAttribute('auto-rotate', '')
     el.setAttribute('shadow-intensity', '1')
@@ -17,11 +14,21 @@ export default function ARViewer({ glbUrl, usdzUrl, alt, fullscreen }) {
 
   return (
     <div className={fullscreen ? 'ar-viewer ar-viewer--fullscreen' : 'ar-viewer'}>
-      <model-viewer ref={ref} src={glbUrl} ios-src={usdzUrl ?? undefined} alt={alt}>
-        <button slot="ar-button" className="ar-button">
-          📱 Plasser i rommet
-        </button>
-      </model-viewer>
+      {glbUrl ? (
+        <>
+          <model-viewer ref={ref} src={glbUrl} ios-src={usdzUrl ?? undefined} alt={alt} />
+          {onStartAR && (
+            <button className="ar-button" onClick={onStartAR}>
+              📷 Plasser i rommet
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="ar-empty">
+          <p>Velg et produkt fra katalogen</p>
+          <p className="ar-empty-hint">eller legg til fra nettbutikk</p>
+        </div>
+      )}
     </div>
   )
 }
