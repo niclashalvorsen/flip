@@ -1,80 +1,29 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
-/*
-  Gestures (via touch-capture layer — reliable in WebXR):
-  - No object selected  → two-finger pinch = camera zoom
-  - Object selected     → two-finger twist  = rotate object around Y axis
-
-  Buttons:
-  - "Legg til her" → place at reticle
-  - "Fjern"        → remove selected object  (shown when selected)
-  - "Ferdig"       → exit AR
-*/
-
 export default function ARScene({ glbUrl, onExit }) {
   const canvasRef = useRef(null)
-  const touchLayerRef = useRef(null)
   const [status, setStatus] = useState('idle')
   const [placedCount, setPlacedCount] = useState(0)
   const [hasSelected, setHasSelected] = useState(false)
+  const [rotationDeg, setRotationDeg] = useState(0)
 
   const sessionRef = useRef(null)
-  const sceneRef = useRef(null)
   const selectedRef = useRef(null)
   const addFnRef = useRef(null)
   const removeFnRef = useRef(null)
 
-  // Attach native touch listeners once the touch layer is mounted (status=active).
-  // Conditional rendering ensures it never covers the Start AR button.
-  useEffect(() => {
-    if (status !== 'active') return
-    const el = touchLayerRef.current
-    if (!el) return
-
-    let lastDist = null
-    let lastAngle = null
-
-    function onTouchMove(e) {
-      if (e.touches.length < 2) return
-      const dx = e.touches[1].clientX - e.touches[0].clientX
-      const dy = e.touches[1].clientY - e.touches[0].clientY
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const angle = Math.atan2(dy, dx)
-
-      if (lastDist !== null) {
-        if (selectedRef.current) {
-          // Selection mode → rotate around Y (3x sensitivity)
-          if (lastAngle !== null) {
-            selectedRef.current.rotation.y += (angle - lastAngle) * 3
-          }
-        } else {
-          // Free mode → zoom via scene scale (reliable across all devices)
-          sceneRef.current.scale.setScalar(
-            THREE.MathUtils.clamp(sceneRef.current.scale.x * (dist / lastDist), 0.25, 4)
-          )
-        }
-      }
-
-      lastDist = dist
-      lastAngle = angle
-    }
-
-    function onTouchEnd(e) {
-      if (e.touches.length < 2) { lastDist = null; lastAngle = null }
-    }
-
-    el.addEventListener('touchmove', onTouchMove, { passive: true })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
-    return () => {
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-    }
-  }, [status])
-
   function handleAdd() { addFnRef.current?.() }
   function handleRemove() { removeFnRef.current?.() }
+
+  function handleRotation(e) {
+    const deg = Number(e.target.value)
+    setRotationDeg(deg)
+    if (selectedRef.current) {
+      selectedRef.current.rotation.y = THREE.MathUtils.degToRad(deg)
+    }
+  }
 
   async function startAR() {
     if (!navigator.xr) { setStatus('unsupported'); return }
@@ -89,7 +38,6 @@ export default function ARScene({ glbUrl, onExit }) {
     renderer.xr.enabled = true
 
     const scene = new THREE.Scene()
-    sceneRef.current = scene
     const camera = new THREE.PerspectiveCamera()
 
     scene.add(new THREE.AmbientLight(0xffffff, 1.2))
@@ -97,7 +45,6 @@ export default function ARScene({ glbUrl, onExit }) {
     dir.position.set(1, 2, 1)
     scene.add(dir)
 
-    // Reticle
     const reticle = new THREE.Mesh(
       new THREE.RingGeometry(0.08, 0.10, 32).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xffffff })
@@ -105,7 +52,6 @@ export default function ARScene({ glbUrl, onExit }) {
     reticle.matrixAutoUpdate = false
     reticle.visible = false
     scene.add(reticle)
-
 
     let modelTemplate = null
     new GLTFLoader().load(glbUrl, gltf => { modelTemplate = gltf.scene })
@@ -148,7 +94,6 @@ export default function ARScene({ glbUrl, onExit }) {
     const hitTestSource = await session.requestHitTestSource({ space: viewerSpace })
     const raycaster = new THREE.Raycaster()
 
-    // Tap → select / deselect only (no tap-to-place)
     session.addEventListener('select', () => {
       const xrCamera = renderer.xr.getCamera()
       raycaster.setFromCamera(new THREE.Vector2(0, 0), xrCamera)
@@ -167,6 +112,9 @@ export default function ARScene({ glbUrl, onExit }) {
             selectedRef.current = root
             setHighlight(root, true)
             setHasSelected(true)
+            // Sync slider to object's current rotation
+            const deg = Math.round(THREE.MathUtils.radToDeg(root.rotation.y) % 360)
+            setRotationDeg((deg + 360) % 360)
           }
         }
       }
@@ -203,19 +151,14 @@ export default function ARScene({ glbUrl, onExit }) {
     onExit()
   }
 
-  const hint = hasSelected
-    ? 'To fingre: vri for å rotere'
-    : placedCount === 0
-      ? 'Pek mot gulvet og trykk "Legg til her"'
-      : 'Trykk objekt for å velge · To fingre for zoom'
+  const hint = placedCount === 0
+    ? 'Pek mot gulvet og trykk "Legg til her"'
+    : 'Trykk på et objekt for å velge det'
 
   return (
     <div className="ar-scene">
       <canvas ref={canvasRef} className="ar-canvas" />
       <div id="ar-overlay" className="ar-overlay">
-
-        {/* Only mounted when AR is active — prevents covering the Start button */}
-        {status === 'active' && <div ref={touchLayerRef} className="ar-touch-layer" />}
 
         {status === 'idle' && (
           <div className="ar-start">
@@ -237,6 +180,21 @@ export default function ARScene({ glbUrl, onExit }) {
         {status === 'active' && (
           <>
             <p className="ar-hint">{hint}</p>
+
+            {hasSelected && (
+              <div className="ar-rotation">
+                <span className="ar-rotation-label">Roter</span>
+                <input
+                  type="range"
+                  className="ar-slider"
+                  min="0"
+                  max="359"
+                  value={rotationDeg}
+                  onChange={handleRotation}
+                />
+              </div>
+            )}
+
             <div className="ar-buttons">
               {hasSelected && (
                 <button className="ar-btn ar-btn--danger" onClick={handleRemove}>🗑 Fjern</button>

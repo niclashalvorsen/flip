@@ -181,18 +181,59 @@ body {
   cursor: pointer;
 }
 
-/* Full-screen transparent layer that captures touch events reliably in WebXR */
-.ar-touch-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: auto;
-  z-index: 0;
-}
-
 .ar-hint,
-.ar-buttons {
+.ar-buttons,
+.ar-rotation {
   position: relative;
   z-index: 1;
+}
+
+/* ── Rotation seekbar ── */
+.ar-rotation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.55);
+  border-radius: 30px;
+  padding: 12px 20px;
+  width: 100%;
+}
+
+.ar-rotation-label {
+  font-size: 13px;
+  color: #ccc;
+  white-space: nowrap;
+}
+
+.ar-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #555;
+  outline: none;
+}
+
+.ar-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+.ar-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
 }
 
 .ar-buttons {
