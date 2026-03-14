@@ -2,12 +2,9 @@ import { useState } from 'react'
 import ARViewer from './components/ARViewer'
 import LeggTil from './components/LeggTil'
 import Katalog from './components/Katalog'
-import { products } from './data/mockProducts'
-
-const DEFAULT_PRODUCT = products[0]
 
 export default function App() {
-  const [currentProduct, setCurrentProduct] = useState(DEFAULT_PRODUCT)
+  const [currentProduct, setCurrentProduct] = useState(null)
   const [sheet, setSheet] = useState(null) // 'legg-til' | 'katalog' | null
 
   function selectProduct(product) {
